@@ -1,0 +1,141 @@
+:root {
+  --bg-color: #1e1e1e;
+  --card-bg: #2d2d2d;
+  --text-color: #e0e0e0;
+  --accent-color: #61dafb;
+  --input-bg: #333;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Navbar */
+.navbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+}
+
+.navbar button {
+  flex: 1;
+  padding: 10px;
+  background: var(--card-bg);
+  color: #888;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  border-radius: 8px;
+  transition: 0.2s;
+}
+
+.navbar button.active {
+  background: var(--accent-color);
+  color: #000;
+  font-weight: bold;
+}
+
+/* Search Box */
+.search-box {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+input, textarea {
+  width: 100%;
+  padding: 12px;
+  background: var(--input-bg);
+  border: 1px solid #444;
+  color: white;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+textarea.code-input {
+  font-family: monospace;
+  color: #a5d6ff;
+}
+
+.search-box button, .save-btn {
+  padding: 0 20px;
+  background: var(--accent-color);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+/* Note Card */
+.note-card {
+  background: var(--card-bg);
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border-left: 4px solid var(--accent-color);
+}
+
+.note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.note-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--accent-color);
+}
+
+.score {
+  font-size: 12px;
+  color: #666;
+}
+
+.note-explanation {
+  margin-bottom: 10px;
+  font-style: italic;
+  color: #ccc;
+}
+
+.tag {
+  background: #444;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  margin-right: 5px;
+}
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #aaa;
+}
+
+.save-btn {
+  width: 100%;
+  padding: 15px;
+  margin-top: 10px;
+}
+
+.status-msg {
+  color: #4caf50;
+  text-align: center;
+  font-weight: bold;
+}

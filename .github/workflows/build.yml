@@ -1,0 +1,96 @@
+name: Build Second Brain Portable
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # --- 1. SETUP & CACHE PYTHON ---
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip' # Tự động cache các thư viện Python
+
+    - name: Install Python dependencies
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    # --- 2. BUILD PYTHON SIDECAR ---
+    - name: Build Python Backend to EXE
+      run: |
+        cd backend
+        # Build thành 1 file exe gọn nhẹ
+        pyinstaller --onefile --name backend --clean main.py
+
+    # --- 3. SETUP & CACHE NODEJS ---
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm' # Tự động cache node_modules
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install Frontend Dependencies
+      run: |
+        cd frontend
+        npm install
+
+    # --- 4. SETUP & CACHE RUST (QUAN TRỌNG NHẤT) ---
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: frontend/src-tauri # Chỉ định thư mục chứa Rust code
+
+    # --- 5. CHUẨN BỊ SIDECAR ---
+    - name: Move and Rename Backend Binary
+      run: |
+        # Tạo thư mục chứa binary theo cấu trúc Tauri
+        mkdir frontend\src-tauri\binaries
+        
+        # Copy và đổi tên file exe backend để khớp với target Windows 64bit
+        copy backend\dist\backend.exe frontend\src-tauri\binaries\backend-x86_64-pc-windows-msvc.exe
+
+    # --- 6. BUILD TAURI APP ---
+    - name: Build Tauri App
+      uses: tauri-apps/tauri-action@v0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        projectPath: "./frontend"
+        args: "--target x86_64-pc-windows-msvc"
+
+    # --- 7. TẠO BẢN PORTABLE (ZIP) ---
+    - name: Create Portable Package
+      run: |
+        # Tạo thư mục tạm để đóng gói
+        mkdir SecondBrain-Portable
+        
+        # Copy file chạy chính (Tên file phụ thuộc vào productName trong tauri.conf.json)
+        # Lưu ý: Tauri build xong sẽ để file ở path này
+        copy frontend\src-tauri\target\x86_64-pc-windows-msvc\release\SecondBrain.exe SecondBrain-Portable\SecondBrain.exe
+        
+        # Copy Sidecar (Bắt buộc phải đi kèm file chính)
+        copy frontend\src-tauri\target\x86_64-pc-windows-msvc\release\backend-x86_64-pc-windows-msvc.exe SecondBrain-Portable\
+        
+        # (Tùy chọn) Copy thêm file cấu hình Webview2 nếu cần thiết (thường Windows 10/11 đã có sẵn)
+        if exist frontend\src-tauri\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll copy frontend\src-tauri\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll SecondBrain-Portable\
+
+    # --- 8. UPLOAD KẾT QUẢ ---
+    - name: Upload Portable Zip
+      uses: actions/upload-artifact@v4
+      with:
+        name: SecondBrain-Portable-Windows
+        path: SecondBrain-Portable/
