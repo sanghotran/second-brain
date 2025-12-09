@@ -74,7 +74,6 @@ jobs:
 
     # --- 7. TẠO BẢN PORTABLE (ZIP) ---
     - name: Create Portable Package
-      shell: cmd
       run: |
         # Tạo thư mục tạm để đóng gói
         mkdir SecondBrain-Portable
@@ -87,7 +86,7 @@ jobs:
         copy frontend\src-tauri\target\x86_64-pc-windows-msvc\release\backend-x86_64-pc-windows-msvc.exe SecondBrain-Portable\
         
         # (Tùy chọn) Copy thêm file cấu hình Webview2 nếu cần thiết (thường Windows 10/11 đã có sẵn)
-        if exist frontend\src-tauri\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll copy frontend\src-tauri\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll SecondBrain-Portable\
+        # if exist frontend\src-tauri\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll copy frontend\src-tauri\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll SecondBrain-Portable\
 
     # --- 8. UPLOAD KẾT QUẢ ---
     - name: Upload Portable Zip
