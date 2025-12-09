@@ -74,6 +74,7 @@ jobs:
 
     # --- 7. TẠO BẢN PORTABLE (ZIP) ---
     - name: Create Portable Package
+      shell: cmd
       run: |
         # Tạo thư mục tạm để đóng gói
         mkdir SecondBrain-Portable
