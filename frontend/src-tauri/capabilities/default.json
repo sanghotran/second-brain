@@ -7,7 +7,7 @@
     "core:default",
     "shell:allow-open",
     {
-      "identifier": "shell:execute",
+      "identifier": "shell:allow-execute",
       "allow": [
         {
           "name": "binaries/backend",
