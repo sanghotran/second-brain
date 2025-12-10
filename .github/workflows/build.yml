@@ -45,7 +45,7 @@ jobs:
         if: steps.cache-backend.outputs.cache-hit != 'true'
         run: |
           cd backend
-          pyinstaller --onefile --name backend --clean main.py
+          pyinstaller --onefile --name backend --clean --hidden-import=chromadb.telemetry.product.posthog --hidden-import=chromadb.telemetry.product main.py
 
       - name: Upload Backend Artifact
         uses: actions/upload-artifact@v4
@@ -122,7 +122,7 @@ jobs:
           Copy-Item "$ReleaseDir\frontend.exe" "SecondBrain-Portable\SecondBrain.exe"
           
           # 2. Copy Sidecar (Lấy đúng chỗ rồi nha)
-          Copy-Item "$BinariesDir\backend-x86_64-pc-windows-msvc.exe" "SecondBrain-Portable\"
+          # Copy-Item "$BinariesDir\backend-x86_64-pc-windows-msvc.exe" "SecondBrain-Portable\"
           
           # 3. Copy WebView2Loader (Nếu có)
           if (Test-Path "$ReleaseDir\WebView2Loader.dll") {
