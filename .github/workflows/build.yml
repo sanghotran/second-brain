@@ -1,4 +1,4 @@
-name: Split Build (Smart Cache)
+name: Split Build (Smart Cache & Lightweight)
 
 on:
   push:
@@ -6,33 +6,27 @@ on:
   workflow_dispatch:
 
 jobs:
-  # --- JOB 1: CHỈ XỬ LÝ PYTHON ---
+  # --- JOB 1: CHỈ XỬ LÝ PYTHON (GIỮ NGUYÊN) ---
   build-python:
     runs-on: windows-latest
     outputs:
-      # Báo hiệu xem có cache hay không (để debug)
       cache-hit: ${{ steps.cache-backend.outputs.cache-hit }}
     
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Tính toán mã băm (Hash) của thư mục backend
-      # Nếu bạn không sửa code Python, Hash này sẽ y hệt lần trước
       - name: Calculate Backend Hash
         id: backend-hash
         run: echo "hash=${{ hashFiles('backend/**') }}" >> $GITHUB_OUTPUT
         shell: bash
 
-      # 2. Kiểm tra Cache xem file EXE này đã từng build chưa
       - name: Cache Python Executable
         id: cache-backend
         uses: actions/cache@v4
         with:
           path: backend/dist/backend.exe
-          # Key dựa trên Hash của code. Code không đổi -> Key không đổi -> Có Cache
           key: backend-exe-${{ steps.backend-hash.outputs.hash }}
 
-      # 3. Setup Python (CHỈ CHẠY KHI KHÔNG CÓ CACHE)
       - name: Set up Python
         if: steps.cache-backend.outputs.cache-hit != 'true'
         uses: actions/setup-python@v4
@@ -40,7 +34,6 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      # 4. Cài thư viện (CHỈ CHẠY KHI KHÔNG CÓ CACHE)
       - name: Install Dependencies
         if: steps.cache-backend.outputs.cache-hit != 'true'
         run: |
@@ -48,36 +41,34 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # 5. Build ra EXE (CHỈ CHẠY KHI KHÔNG CÓ CACHE)
       - name: Build EXE
         if: steps.cache-backend.outputs.cache-hit != 'true'
         run: |
           cd backend
           pyinstaller --onefile --name backend --clean main.py
 
-      # 6. Upload file EXE để chuyển sang Job sau
       - name: Upload Backend Artifact
         uses: actions/upload-artifact@v4
         with:
           name: backend-binary
           path: backend/dist/backend.exe
 
-  # --- JOB 2: CHỈ XỬ LÝ TAURI (FRONTEND) ---
+  # --- JOB 2: CHỈ XỬ LÝ TAURI & ĐÓNG GÓI GỌN NHẸ ---
   build-tauri:
-    needs: build-python # Bắt buộc chờ Job Python xong mới chạy
+    needs: build-python
     runs-on: windows-latest
     
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Tải file EXE từ Job trước (Hoặc từ Cache của Job trước)
+      # 1. Tải Backend về
       - name: Download Backend Artifact
         uses: actions/download-artifact@v4
         with:
           name: backend-binary
           path: backend/dist
 
-      # 2. Setup Node (Có cache npm)
+      # 2. Setup Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -90,7 +81,7 @@ jobs:
           cd frontend
           npm install
 
-      # 3. Setup Rust (Có cache biên dịch - Quan trọng nhất để nhanh)
+      # 3. Setup Rust & Cache
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -98,7 +89,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: frontend/src-tauri
-          prefix-key: "v2-rust-final"
+          prefix-key: "v2-rust-final-optimized"
 
       # 4. Chuẩn bị Sidecar
       - name: Prepare Sidecar
@@ -115,9 +106,29 @@ jobs:
           projectPath: "./frontend"
           args: "--target x86_64-pc-windows-msvc"
 
-      # 6. Upload kết quả cuối cùng
-      - name: Upload Final App
+      # --- 6. ĐÓNG GÓI GỌN NHẸ (LỌC FILE) ---
+      # Bước này dùng PowerShell để nhặt đúng file cần thiết
+      - name: Package Only Necessary Files
+        run: |
+          New-Item -ItemType Directory -Force -Path "SecondBrain-Portable"
+          
+          # Đường dẫn gốc nơi Tauri nhả file
+          $BaseDir = "frontend\src-tauri\target\x86_64-pc-windows-msvc\release"
+          
+          # 1. Copy file chính và đổi tên
+          Copy-Item "$BaseDir\frontend.exe" "SecondBrain-Portable\SecondBrain.exe"
+          
+          # 2. Copy Sidecar (Bắt buộc)
+          Copy-Item "$BaseDir\backend-x86_64-pc-windows-msvc.exe" "SecondBrain-Portable\"
+          
+          # 3. Copy WebView2Loader.dll (Nếu có - để chạy trên máy lạ không lỗi)
+          if (Test-Path "$BaseDir\WebView2Loader.dll") {
+              Copy-Item "$BaseDir\WebView2Loader.dll" "SecondBrain-Portable\"
+          }
+
+      # 7. Upload thành phẩm (Chỉ folder gọn nhẹ)
+      - name: Upload Portable Zip
         uses: actions/upload-artifact@v4
         with:
-          name: SecondBrain-App
-          path: frontend/src-tauri/target/x86_64-pc-windows-msvc/release/
+          name: SecondBrain-Portable
+          path: SecondBrain-Portable/
