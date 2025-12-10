@@ -26,7 +26,6 @@ struct MyModel {
 
 impl MyModel {
     fn new() -> Result<Self, E> {
-        // Dùng CPU để đảm bảo chạy mọi máy
         let device = Device::Cpu;
         let api = Api::new()?;
         let repo = api.repo(Repo::with_revision(
@@ -42,8 +41,9 @@ impl MyModel {
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
         
-        // --- CẬP NHẬT CHO CANDLE 0.8.2 ---
-        let vb = VarBuilder::from_tensors_backed(DTYPE, &weights_filename, device.clone())?;
+        // --- SỬA LỖI 1: Dùng hàm load mới 'from_mmaped_safetensors' ---
+        // Hàm này an toàn và nhanh hơn
+        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[weights_filename], DTYPE, &device)? };
         let model = BertModel::load(vb, &config)?;
 
         Ok(Self { model, tokenizer })
@@ -52,15 +52,15 @@ impl MyModel {
     fn embed(&mut self, text: &str) -> Result<Vec<f32>, E> {
         let device = Device::Cpu;
         let tokenizer = self.tokenizer.with_padding(None).with_truncation(None).map_err(E::msg)?;
-        // Encode text
+        
         let tokens = tokenizer.encode(text, true).map_err(E::msg)?.get_ids().to_vec();
         let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
         let token_type_ids = token_ids.zeros_like()?;
 
-        // Chạy Model
-        let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
+        // --- SỬA LỖI 2: Thêm tham số 'None' (Attention Mask) vào hàm forward ---
+        let embeddings = self.model.forward(&token_ids, &token_type_ids, None)?;
         
-        // Mean Pooling (Thủ công)
+        // Mean Pooling
         let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
         let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
         let embeddings = embeddings.get(0)?; 
@@ -69,7 +69,6 @@ impl MyModel {
         let sum_sq: f32 = embeddings.sqr()?.sum_all()?.to_scalar()?;
         let normalized = (embeddings / (sum_sq.sqrt() as f64))?;
         
-        // Trả về Vector
         Ok(normalized.to_vec1()?)
     }
 }
@@ -96,7 +95,7 @@ fn init_db() -> Connection {
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot_product: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    dot_product // Đã normalize nên không cần chia
+    dot_product
 }
 
 #[tauri::command]
@@ -154,7 +153,6 @@ fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, Strin
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Khởi tạo model và DB
     let model = MyModel::new().expect("Failed to initialize Candle AI");
     let db = init_db();
 
