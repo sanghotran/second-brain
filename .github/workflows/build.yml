@@ -1,4 +1,4 @@
-name: Split Build (Smart Cache & Lightweight)
+name: Split Build (Fixed Paths)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # --- JOB 1: CHỈ XỬ LÝ PYTHON (GIỮ NGUYÊN) ---
+  # --- JOB 1: PYTHON (GIỮ NGUYÊN) ---
   build-python:
     runs-on: windows-latest
     outputs:
@@ -53,7 +53,7 @@ jobs:
           name: backend-binary
           path: backend/dist/backend.exe
 
-  # --- JOB 2: CHỈ XỬ LÝ TAURI & ĐÓNG GÓI GỌN NHẸ ---
+  # --- JOB 2: TAURI (SỬA ĐƯỜNG DẪN COPY) ---
   build-tauri:
     needs: build-python
     runs-on: windows-latest
@@ -61,14 +61,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Tải Backend về
+      # 1. Tải Backend
       - name: Download Backend Artifact
         uses: actions/download-artifact@v4
         with:
           name: backend-binary
           path: backend/dist
 
-      # 2. Setup Node
+      # 2. Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -81,7 +81,7 @@ jobs:
           cd frontend
           npm install
 
-      # 3. Setup Rust & Cache
+      # 3. Rust & Cache
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -89,9 +89,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: frontend/src-tauri
-          prefix-key: "v2-rust-final-optimized"
+          prefix-key: "v2-rust-final-fixed"
 
-      # 4. Chuẩn bị Sidecar
+      # 4. Chuẩn bị Sidecar (Copy vào folder binaries)
+      # File này sẽ nằm ở đây VĨNH VIỄN, chúng ta sẽ lấy nó từ đây ở bước cuối
       - name: Prepare Sidecar
         run: |
           mkdir frontend\src-tauri\binaries
@@ -106,27 +107,29 @@ jobs:
           projectPath: "./frontend"
           args: "--target x86_64-pc-windows-msvc"
 
-      # --- 6. ĐÓNG GÓI GỌN NHẸ (LỌC FILE) ---
-      # Bước này dùng PowerShell để nhặt đúng file cần thiết
+      # --- 6. ĐÓNG GÓI (SỬA LẠI ĐƯỜNG DẪN) ---
       - name: Package Only Necessary Files
         run: |
           New-Item -ItemType Directory -Force -Path "SecondBrain-Portable"
           
-          # Đường dẫn gốc nơi Tauri nhả file
-          $BaseDir = "frontend\src-tauri\target\x86_64-pc-windows-msvc\release"
+          # Folder chứa Main App (Frontend)
+          $ReleaseDir = "frontend\src-tauri\target\x86_64-pc-windows-msvc\release"
           
-          # 1. Copy file chính và đổi tên
-          Copy-Item "$BaseDir\frontend.exe" "SecondBrain-Portable\SecondBrain.exe"
+          # Folder chứa Sidecar (Backend) - LẤY TỪ FOLDER BINARIES CHỨ KHÔNG LẤY TỪ RELEASE
+          $BinariesDir = "frontend\src-tauri\binaries"
           
-          # 2. Copy Sidecar (Bắt buộc)
-          Copy-Item "$BaseDir\backend-x86_64-pc-windows-msvc.exe" "SecondBrain-Portable\"
+          # 1. Copy Main App
+          Copy-Item "$ReleaseDir\frontend.exe" "SecondBrain-Portable\SecondBrain.exe"
           
-          # 3. Copy WebView2Loader.dll (Nếu có - để chạy trên máy lạ không lỗi)
-          if (Test-Path "$BaseDir\WebView2Loader.dll") {
-              Copy-Item "$BaseDir\WebView2Loader.dll" "SecondBrain-Portable\"
+          # 2. Copy Sidecar (Lấy đúng chỗ rồi nha)
+          Copy-Item "$BinariesDir\backend-x86_64-pc-windows-msvc.exe" "SecondBrain-Portable\"
+          
+          # 3. Copy WebView2Loader (Nếu có)
+          if (Test-Path "$ReleaseDir\WebView2Loader.dll") {
+              Copy-Item "$ReleaseDir\WebView2Loader.dll" "SecondBrain-Portable\"
           }
 
-      # 7. Upload thành phẩm (Chỉ folder gọn nhẹ)
+      # 7. Upload
       - name: Upload Portable Zip
         uses: actions/upload-artifact@v4
         with:
