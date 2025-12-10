@@ -1,51 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // 1. Đã thêm useEffect
 import axios from 'axios';
+import { Command } from '@tauri-apps/plugin-shell'; // 2. Đã thêm import Command từ Tauri
 import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import './App.css';
 
 const API_URL = "http://127.0.0.1:8000";
 
-// Trong file App.jsx
-
-useEffect(() => {
-  const startBackend = async () => {
-    try {
-      // 1. Gọi lệnh chạy file exe Python ngầm (Sidecar)
-      // Lưu ý: 'binaries/backend' là đường dẫn ảo, Tauri tự map với file thực tế
-      const command = Command.sidecar('binaries/backend');
-      const child = await command.spawn();
-      console.log('Backend started with PID:', child.pid);
-      
-      // 2. (Mới thêm) Ping liên tục cho đến khi Server sống
-      checkHealth();
-    } catch (err) {
-      console.error('Lỗi khởi động Backend:', err);
-    }
-  };
-
-  const checkHealth = async () => {
-    let retries = 10;
-    while (retries > 0) {
-      try {
-        // Gọi thử API root để xem sống chưa
-        await axios.get('http://127.0.0.1:8000/');
-        console.log("Backend đã sẵn sàng!");
-        return; // Thoát vòng lặp
-      } catch (e) {
-        console.log("Đang đợi Backend... " + retries);
-        await new Promise(r => setTimeout(r, 1000)); // Đợi 1 giây
-        retries--;
-      }
-    }
-    alert("Không thể kết nối Backend sau 10 giây. Hãy khởi động lại App!");
-  };
-
-  startBackend();
-}, []);
-
 function App() {
-  const [view, setView] = useState('search'); // 'search' hoặc 'add'
+  const [view, setView] = useState('search');
   
   // --- STATE CHO TÌM KIẾM ---
   const [query, setQuery] = useState('');
@@ -59,24 +22,43 @@ function App() {
     tags: ''
   });
   const [message, setMessage] = useState('');
-  // --- THÊM ĐOẠN NÀY ĐỂ CHẠY PYTHON ---
+
+  // --- TỰ ĐỘNG CHẠY BACKEND KHI MỞ APP ---
   useEffect(() => {
-    // Hàm khởi động Sidecar
     const startBackend = async () => {
       try {
         console.log("Đang khởi động Brain Engine...");
-        // 'backend' phải khớp với tên trong tauri.conf.json
+        // 'binaries/backend' là đường dẫn ảo mà Tauri tự map
         const command = Command.sidecar('binaries/backend');
         const child = await command.spawn();
         console.log('Brain Engine PID:', child.pid);
+        
+        // Sau khi bật exe lên, ping thử xem nó sống chưa
+        checkHealth();
       } catch (err) {
         console.error('Không thể khởi động Backend:', err);
       }
     };
 
+    const checkHealth = async () => {
+      let retries = 10;
+      while (retries > 0) {
+        try {
+          // Gọi thử API root
+          await axios.get('http://127.0.0.1:8000/');
+          console.log("Backend đã sẵn sàng!");
+          return; // Server sống rồi thì thoát
+        } catch (e) {
+          console.log("Đang đợi Backend... " + retries);
+          await new Promise(r => setTimeout(r, 1000)); // Đợi 1 giây
+          retries--;
+        }
+      }
+      // alert("Không kết nối được Backend. Hãy thử khởi động lại App!");
+    };
+
     startBackend();
-  }, []);
-  // ------------------------------------
+  }, []); // Mảng rỗng [] nghĩa là chỉ chạy 1 lần khi mở app
 
   // --- XỬ LÝ TÌM KIẾM ---
   const handleSearch = async (e) => {
@@ -94,7 +76,6 @@ function App() {
   const handleAdd = async (e) => {
     e.preventDefault();
     try {
-      // Tách tags từ chuỗi "tag1, tag2" thành array
       const tagsArray = formData.tags.split(',').map(tag => tag.trim());
       
       await axios.post(`${API_URL}/add`, {
@@ -103,7 +84,6 @@ function App() {
       });
 
       setMessage("Đã nạp kiến thức thành công!");
-      // Reset form để nhập tiếp
       setFormData({ problem: '', solution: '', explanation: '', tags: '' });
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
