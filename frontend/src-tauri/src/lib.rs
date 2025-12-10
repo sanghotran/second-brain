@@ -19,15 +19,14 @@ struct Note {
     tags: String,
 }
 
-// Struct chứa Model AI (Candle)
 struct MyModel {
     model: BertModel,
     tokenizer: Tokenizer,
 }
 
 impl MyModel {
-    // Hàm load model từ HuggingFace (Tự động tải về máy)
     fn new() -> Result<Self, E> {
+        // Dùng CPU để đảm bảo chạy mọi máy
         let device = Device::Cpu;
         let api = Api::new()?;
         let repo = api.repo(Repo::with_revision(
@@ -42,31 +41,35 @@ impl MyModel {
 
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
+        
+        // --- CẬP NHẬT CHO CANDLE 0.8.2 ---
         let vb = VarBuilder::from_tensors_backed(DTYPE, &weights_filename, device.clone())?;
         let model = BertModel::load(vb, &config)?;
 
         Ok(Self { model, tokenizer })
     }
 
-    // Hàm biến text thành vector
     fn embed(&mut self, text: &str) -> Result<Vec<f32>, E> {
         let device = Device::Cpu;
         let tokenizer = self.tokenizer.with_padding(None).with_truncation(None).map_err(E::msg)?;
+        // Encode text
         let tokens = tokenizer.encode(text, true).map_err(E::msg)?.get_ids().to_vec();
         let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
         let token_type_ids = token_ids.zeros_like()?;
 
+        // Chạy Model
         let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
         
-        // Mean pooling (Lấy trung bình cộng các token để ra vector câu)
+        // Mean Pooling (Thủ công)
         let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
         let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
-        let embeddings = embeddings.get(0)?; // Lấy vector đầu tiên
+        let embeddings = embeddings.get(0)?; 
         
-        // Normalize vector (để tính Cosine cho chuẩn)
+        // Normalize
         let sum_sq: f32 = embeddings.sqr()?.sum_all()?.to_scalar()?;
         let normalized = (embeddings / (sum_sq.sqrt() as f64))?;
         
+        // Trả về Vector
         Ok(normalized.to_vec1()?)
     }
 }
@@ -93,15 +96,13 @@ fn init_db() -> Connection {
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot_product: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    // Vì vector đã normalize ở trên nên không cần chia cho norm nữa
-    dot_product
+    dot_product // Đã normalize nên không cần chia
 }
 
 #[tauri::command]
 fn add_note(state: State<AppState>, problem: String, solution: String, explanation: String, tags: String) -> Result<String, String> {
     let content = format!("Problem: {}\nSolution: {}\nExplanation: {}", problem, solution, explanation);
     
-    // Gọi model Candle
     let mut model_guard = state.model.lock().map_err(|_| "Failed to lock model")?;
     let vector = model_guard.embed(&content).map_err(|e| e.to_string())?;
     
@@ -119,7 +120,6 @@ fn add_note(state: State<AppState>, problem: String, solution: String, explanati
 
 #[tauri::command]
 fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, String> {
-    // Gọi model Candle
     let mut model_guard = state.model.lock().map_err(|_| "Failed to lock model")?;
     let query_vector = model_guard.embed(&query).map_err(|e| e.to_string())?;
 
@@ -154,7 +154,7 @@ fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, Strin
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Load model khi khởi động
+    // Khởi tạo model và DB
     let model = MyModel::new().expect("Failed to initialize Candle AI");
     let db = init_db();
 

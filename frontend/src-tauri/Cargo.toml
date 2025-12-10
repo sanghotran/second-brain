@@ -17,15 +17,14 @@ tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
-uuid = { version = "1.8", features = ["v4"] }
+rusqlite = { version = "0.32", features = ["bundled"] } # Update DB mới nhất
+uuid = { version = "1.10", features = ["v4"] }
 anyhow = "1.0"
 
-# --- THAY THẾ FASTEMBED BẰNG CANDLE (PURE RUST) ---
-# Bộ này đảm bảo không lỗi build trên Windows
-candle-core = "0.6.0"
-candle-nn = "0.6.0"
-candle-transformers = "0.6.0"
-tokenizers = "0.19.1"
-hf-hub = "0.3.2"
-# --------------------------------------------------
+# --- FIX LỖI BUILD: DÙNG BẢN MỚI NHẤT (0.8.2) ---
+candle-core = "0.8.2"
+candle-nn = "0.8.2"
+candle-transformers = "0.8.2"
+tokenizers = "0.21.0" # Tương thích với Candle 0.8
+hf-hub = "0.4.1"      # Update Hub mới nhất
+# ------------------------------------------------
