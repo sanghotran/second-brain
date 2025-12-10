@@ -46,12 +46,12 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 fn add_note(state: State<AppState>, problem: String, solution: String, explanation: String, tags: String) -> Result<String, String> {
     let content = format!("Problem: {}\nSolution: {}\nExplanation: {}", problem, solution, explanation);
     
-    // --- KHÁC BIỆT CỦA BẢN 2.12.0 ---
     let model = state.model.lock().map_err(|_| "Failed to lock model")?;
-    // Bản cũ embed trả về Vec<Vec<f32>> luôn, không cần unwrap phức tạp
+    
+    // --- API CỦA BẢN 2.6.0 ---
     let embeddings = model.embed(vec![content], None).map_err(|e| e.to_string())?;
     let vector = &embeddings[0]; 
-    // --------------------------------
+    // -------------------------
 
     let vector_json = serde_json::to_string(vector).map_err(|e| e.to_string())?;
     let conn = state.db.lock().map_err(|_| "Failed to lock db")?;
@@ -102,7 +102,7 @@ fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, Strin
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Bản 2.12.0 API cũng như này, vẫn chạy tốt
+    // --- API KHỞI TẠO BẢN 2.6.0 ---
     let model = TextEmbedding::try_new(InitOptions {
         model_name: EmbeddingModel::AllMiniLML6V2, 
         show_download_progress: true,

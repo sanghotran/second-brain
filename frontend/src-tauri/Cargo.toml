@@ -18,9 +18,9 @@ tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# --- SỬA DÒNG NÀY ĐỂ FIX LỖI ORT ---
-fastembed = "2.12.0"  # Về bản 2 ổn định, bản 3 đang lỗi trên Windows
-# -----------------------------------
+# --- FIX LỖI BUILD: DÙNG BẢN 2.6.0 ĐỂ TRÁNH LỖI WINDOWS ---
+fastembed = "2.6.0" 
+# ----------------------------------------------------------
 
 rusqlite = { version = "0.31", features = ["bundled"] }
 uuid = { version = "1.8", features = ["v4"] }
