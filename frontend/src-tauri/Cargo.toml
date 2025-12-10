@@ -5,7 +5,6 @@ description = "Second Brain Native"
 authors = ["you"]
 edition = "2021"
 
-# --- PHẦN QUAN TRỌNG ĐỂ BUILD ĐƯỢC ---
 [lib]
 name = "frontend_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -14,16 +13,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# 1. Cốt lõi Tauri
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# 2. Logic RAG & Database (Rust Native)
-# fastembed: Chạy model AI (tương đương sentence-transformers)
-fastembed = "3"
-# rusqlite: Database (bundled để tự đóng gói, không cần cài SQLite ngoài)
-rusqlite = { version = "0.32", features = ["bundled"] }
-# uuid: Tạo ID ngẫu nhiên
-uuid = { version = "1.10", features = ["v4", "fast-rng", "macro-diagnostics"] }
+# --- SỬA DÒNG NÀY ĐỂ FIX LỖI ORT ---
+fastembed = "2.12.0"  # Về bản 2 ổn định, bản 3 đang lỗi trên Windows
+# -----------------------------------
+
+rusqlite = { version = "0.31", features = ["bundled"] }
+uuid = { version = "1.8", features = ["v4"] }
+anyhow = "1.0"
