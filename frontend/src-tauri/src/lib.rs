@@ -41,8 +41,6 @@ impl MyModel {
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
         
-        // --- SỬA LỖI 1: Dùng hàm load mới 'from_mmaped_safetensors' ---
-        // Hàm này an toàn và nhanh hơn
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[weights_filename], DTYPE, &device)? };
         let model = BertModel::load(vb, &config)?;
 
@@ -57,15 +55,12 @@ impl MyModel {
         let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
         let token_type_ids = token_ids.zeros_like()?;
 
-        // --- SỬA LỖI 2: Thêm tham số 'None' (Attention Mask) vào hàm forward ---
         let embeddings = self.model.forward(&token_ids, &token_type_ids, None)?;
         
-        // Mean Pooling
         let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
         let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
         let embeddings = embeddings.get(0)?; 
         
-        // Normalize
         let sum_sq: f32 = embeddings.sqr()?.sum_all()?.to_scalar()?;
         let normalized = (embeddings / (sum_sq.sqrt() as f64))?;
         
@@ -79,6 +74,7 @@ struct AppState {
 }
 
 fn init_db() -> Connection {
+    // Sửa lại đường dẫn DB để chắc chắn nó tạo file ở nơi dễ tìm
     let conn = Connection::open("brain.db").expect("Failed to open DB");
     conn.execute(
         "CREATE TABLE IF NOT EXISTS notes (
@@ -100,6 +96,8 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 #[tauri::command]
 fn add_note(state: State<AppState>, problem: String, solution: String, explanation: String, tags: String) -> Result<String, String> {
+    println!("DEBUG: Đang thêm note mới: {}", problem); // Log debug
+    
     let content = format!("Problem: {}\nSolution: {}\nExplanation: {}", problem, solution, explanation);
     
     let mut model_guard = state.model.lock().map_err(|_| "Failed to lock model")?;
@@ -114,11 +112,14 @@ fn add_note(state: State<AppState>, problem: String, solution: String, explanati
         params![note_id, problem, solution, explanation, tags, vector_json],
     ).map_err(|e| e.to_string())?;
 
+    println!("DEBUG: Đã lưu thành công ID: {}", note_id);
     Ok(note_id)
 }
 
 #[tauri::command]
 fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, String> {
+    println!("DEBUG: Đang tìm kiếm với từ khóa: '{}'", query);
+
     let mut model_guard = state.model.lock().map_err(|_| "Failed to lock model")?;
     let query_vector = model_guard.embed(&query).map_err(|e| e.to_string())?;
 
@@ -126,6 +127,8 @@ fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, Strin
     let mut stmt = conn.prepare("SELECT id, problem, solution, explanation, tags, vector FROM notes").map_err(|e| e.to_string())?;
     
     let mut results = Vec::new();
+    let mut count_total = 0;
+
     let rows = stmt.query_map([], |row| {
         let vector_str: String = row.get(5)?;
         let vector: Vec<f32> = serde_json::from_str(&vector_str).unwrap_or_default();
@@ -143,10 +146,21 @@ fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, Strin
 
     for row in rows {
         if let Ok((note, vector)) = row {
+            count_total += 1;
             let score = cosine_similarity(&query_vector, &vector);
-            if score > 0.4 { results.push((score, note)); }
+            
+            // --- LOG ĐIỂM SỐ ĐỂ BIẾT TẠI SAO KHÔNG RA ---
+            println!("DEBUG: So khớp với ID: {}, Điểm: {}", note.id, score);
+            
+            // HẠ NGƯỠNG XUỐNG 0.1 (Hoặc 0.0 nếu muốn hiện tất cả)
+            if score > 0.1 { 
+                results.push((score, note)); 
+            }
         }
     }
+
+    println!("DEBUG: Tổng số note trong DB: {}. Tìm thấy: {}", count_total, results.len());
+
     results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     Ok(results.into_iter().take(5).map(|(_, note)| note).collect())
 }
