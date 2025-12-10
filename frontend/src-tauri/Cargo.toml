@@ -1,16 +1,12 @@
 [package]
 name = "frontend"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Second Brain Native"
 authors = ["you"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
+# --- PHẦN QUAN TRỌNG ĐỂ BUILD ĐƯỢC ---
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "frontend_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -18,8 +14,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# 1. Cốt lõi Tauri
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-shell = "2"
+
+# 2. Logic RAG & Database (Rust Native)
+# fastembed: Chạy model AI (tương đương sentence-transformers)
+fastembed = "3"
+# rusqlite: Database (bundled để tự đóng gói, không cần cài SQLite ngoài)
+rusqlite = { version = "0.32", features = ["bundled"] }
+# uuid: Tạo ID ngẫu nhiên
+uuid = { version = "1.10", features = ["v4", "fast-rng", "macro-diagnostics"] }

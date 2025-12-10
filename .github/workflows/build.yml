@@ -1,4 +1,4 @@
-name: Split Build (Fixed Paths)
+name: Build Rust Native
 
 on:
   push:
@@ -6,99 +6,33 @@ on:
   workflow_dispatch:
 
 jobs:
-  # --- JOB 1: PYTHON (GIỮ NGUYÊN) ---
-  build-python:
+  build:
     runs-on: windows-latest
-    outputs:
-      cache-hit: ${{ steps.cache-backend.outputs.cache-hit }}
-    
     steps:
       - uses: actions/checkout@v4
-
-      - name: Calculate Backend Hash
-        id: backend-hash
-        run: echo "hash=${{ hashFiles('backend/**') }}" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Cache Python Executable
-        id: cache-backend
-        uses: actions/cache@v4
-        with:
-          path: backend/dist/backend.exe
-          key: backend-exe-${{ steps.backend-hash.outputs.hash }}
-
-      - name: Set up Python
-        if: steps.cache-backend.outputs.cache-hit != 'true'
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-
-      - name: Install Dependencies
-        if: steps.cache-backend.outputs.cache-hit != 'true'
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build EXE
-        if: steps.cache-backend.outputs.cache-hit != 'true'
-        run: |
-          cd backend
-          pyinstaller --onefile --name backend --clean --hidden-import=chromadb.telemetry.product.posthog --hidden-import=chromadb.telemetry.product main.py
-
-      - name: Upload Backend Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-binary
-          path: backend/dist/backend.exe
-
-  # --- JOB 2: TAURI (SỬA ĐƯỜNG DẪN COPY) ---
-  build-tauri:
-    needs: build-python
-    runs-on: windows-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-
-      # 1. Tải Backend
-      - name: Download Backend Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-binary
-          path: backend/dist
-
-      # 2. Node
-      - name: Setup Node.js
+      
+      # 1. Setup môi trường Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+      
+      - run: cd frontend && npm install
 
-      - name: Install Frontend Deps
-        run: |
-          cd frontend
-          npm install
-
-      # 3. Rust & Cache
-      - name: Install Rust stable
+      # 2. Setup môi trường Rust
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # 3. Cache Rust (Để lần sau build nhanh hơn)
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: frontend/src-tauri
-          prefix-key: "v2-rust-final-fixed"
+          prefix-key: "rust-native-v1"
 
-      # 4. Chuẩn bị Sidecar (Copy vào folder binaries)
-      # File này sẽ nằm ở đây VĨNH VIỄN, chúng ta sẽ lấy nó từ đây ở bước cuối
-      - name: Prepare Sidecar
-        run: |
-          mkdir frontend\src-tauri\binaries
-          copy backend\dist\backend.exe frontend\src-tauri\binaries\backend-x86_64-pc-windows-msvc.exe
-
-      # 5. Build Tauri
+      # 4. Build App
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
@@ -107,31 +41,11 @@ jobs:
           projectPath: "./frontend"
           args: "--target x86_64-pc-windows-msvc"
 
-      # --- 6. ĐÓNG GÓI (SỬA LẠI ĐƯỜNG DẪN) ---
-      - name: Package Only Necessary Files
-        run: |
-          New-Item -ItemType Directory -Force -Path "SecondBrain-Portable"
-          
-          # Folder chứa Main App (Frontend)
-          $ReleaseDir = "frontend\src-tauri\target\x86_64-pc-windows-msvc\release"
-          
-          # Folder chứa Sidecar (Backend) - LẤY TỪ FOLDER BINARIES CHỨ KHÔNG LẤY TỪ RELEASE
-          $BinariesDir = "frontend\src-tauri\binaries"
-          
-          # 1. Copy Main App
-          Copy-Item "$ReleaseDir\frontend.exe" "SecondBrain-Portable\SecondBrain.exe"
-          
-          # 2. Copy Sidecar (Lấy đúng chỗ rồi nha)
-          # Copy-Item "$BinariesDir\backend-x86_64-pc-windows-msvc.exe" "SecondBrain-Portable\"
-          
-          # 3. Copy WebView2Loader (Nếu có)
-          if (Test-Path "$ReleaseDir\WebView2Loader.dll") {
-              Copy-Item "$ReleaseDir\WebView2Loader.dll" "SecondBrain-Portable\"
-          }
-
-      # 7. Upload
-      - name: Upload Portable Zip
+      # 5. Upload File Kết quả
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SecondBrain-Portable
-          path: SecondBrain-Portable/
+          name: SecondBrain-App
+          path: |
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/frontend.exe
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/WebView2Loader.dll
