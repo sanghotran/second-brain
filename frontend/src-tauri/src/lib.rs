@@ -1,8 +1,13 @@
-use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
+use anyhow::Error as E;
+use candle_core::{Device, Tensor};
+use candle_nn::VarBuilder;
+use candle_transformers::models::bert::{BertModel, Config, DTYPE};
+use hf_hub::{api::sync::Api, Repo, RepoType};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::State;
+use tokenizers::Tokenizer;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -14,9 +19,61 @@ struct Note {
     tags: String,
 }
 
+// Struct chứa Model AI (Candle)
+struct MyModel {
+    model: BertModel,
+    tokenizer: Tokenizer,
+}
+
+impl MyModel {
+    // Hàm load model từ HuggingFace (Tự động tải về máy)
+    fn new() -> Result<Self, E> {
+        let device = Device::Cpu;
+        let api = Api::new()?;
+        let repo = api.repo(Repo::with_revision(
+            "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+            RepoType::Model,
+            "main".to_string(),
+        ));
+
+        let config_filename = repo.get("config.json")?;
+        let tokenizer_filename = repo.get("tokenizer.json")?;
+        let weights_filename = repo.get("model.safetensors")?;
+
+        let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
+        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
+        let vb = VarBuilder::from_tensors_backed(DTYPE, &weights_filename, device.clone())?;
+        let model = BertModel::load(vb, &config)?;
+
+        Ok(Self { model, tokenizer })
+    }
+
+    // Hàm biến text thành vector
+    fn embed(&mut self, text: &str) -> Result<Vec<f32>, E> {
+        let device = Device::Cpu;
+        let tokenizer = self.tokenizer.with_padding(None).with_truncation(None).map_err(E::msg)?;
+        let tokens = tokenizer.encode(text, true).map_err(E::msg)?.get_ids().to_vec();
+        let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
+        let token_type_ids = token_ids.zeros_like()?;
+
+        let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
+        
+        // Mean pooling (Lấy trung bình cộng các token để ra vector câu)
+        let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
+        let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
+        let embeddings = embeddings.get(0)?; // Lấy vector đầu tiên
+        
+        // Normalize vector (để tính Cosine cho chuẩn)
+        let sum_sq: f32 = embeddings.sqr()?.sum_all()?.to_scalar()?;
+        let normalized = (embeddings / (sum_sq.sqrt() as f64))?;
+        
+        Ok(normalized.to_vec1()?)
+    }
+}
+
 struct AppState {
     db: Mutex<Connection>,
-    model: Mutex<TextEmbedding>,
+    model: Mutex<MyModel>,
 }
 
 fn init_db() -> Connection {
@@ -29,31 +86,26 @@ fn init_db() -> Connection {
             explanation TEXT,
             tags TEXT,
             vector TEXT
-        )",
-        [],
+        )", [],
     ).expect("Failed to create table");
     conn
 }
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot_product: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot_product / (norm_a * norm_b) }
+    // Vì vector đã normalize ở trên nên không cần chia cho norm nữa
+    dot_product
 }
 
 #[tauri::command]
 fn add_note(state: State<AppState>, problem: String, solution: String, explanation: String, tags: String) -> Result<String, String> {
     let content = format!("Problem: {}\nSolution: {}\nExplanation: {}", problem, solution, explanation);
     
-    let model = state.model.lock().map_err(|_| "Failed to lock model")?;
+    // Gọi model Candle
+    let mut model_guard = state.model.lock().map_err(|_| "Failed to lock model")?;
+    let vector = model_guard.embed(&content).map_err(|e| e.to_string())?;
     
-    // --- API CỦA BẢN 2.6.0 ---
-    let embeddings = model.embed(vec![content], None).map_err(|e| e.to_string())?;
-    let vector = &embeddings[0]; 
-    // -------------------------
-
-    let vector_json = serde_json::to_string(vector).map_err(|e| e.to_string())?;
+    let vector_json = serde_json::to_string(&vector).map_err(|e| e.to_string())?;
     let conn = state.db.lock().map_err(|_| "Failed to lock db")?;
     let note_id = Uuid::new_v4().to_string();
 
@@ -67,9 +119,9 @@ fn add_note(state: State<AppState>, problem: String, solution: String, explanati
 
 #[tauri::command]
 fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, String> {
-    let model = state.model.lock().map_err(|_| "Failed to lock model")?;
-    let query_embeddings = model.embed(vec![query], None).map_err(|e| e.to_string())?;
-    let query_vector = &query_embeddings[0];
+    // Gọi model Candle
+    let mut model_guard = state.model.lock().map_err(|_| "Failed to lock model")?;
+    let query_vector = model_guard.embed(&query).map_err(|e| e.to_string())?;
 
     let conn = state.db.lock().map_err(|_| "Failed to lock db")?;
     let mut stmt = conn.prepare("SELECT id, problem, solution, explanation, tags, vector FROM notes").map_err(|e| e.to_string())?;
@@ -92,7 +144,7 @@ fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, Strin
 
     for row in rows {
         if let Ok((note, vector)) = row {
-            let score = cosine_similarity(query_vector, &vector);
+            let score = cosine_similarity(&query_vector, &vector);
             if score > 0.4 { results.push((score, note)); }
         }
     }
@@ -102,13 +154,8 @@ fn search_note(state: State<AppState>, query: String) -> Result<Vec<Note>, Strin
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // --- API KHỞI TẠO BẢN 2.6.0 ---
-    let model = TextEmbedding::try_new(InitOptions {
-        model_name: EmbeddingModel::AllMiniLML6V2, 
-        show_download_progress: true,
-        ..Default::default()
-    }).expect("Failed to initialize AI Model");
-
+    // Load model khi khởi động
+    let model = MyModel::new().expect("Failed to initialize Candle AI");
     let db = init_db();
 
     tauri::Builder::default()
